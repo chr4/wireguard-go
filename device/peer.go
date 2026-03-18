@@ -28,6 +28,7 @@ type Peer struct {
 	endpoint struct {
 		sync.Mutex
 		val            conn.Endpoint
+		configured     string
 		clearSrcOnTx   bool // signal to val.ClearSrc() prior to next packet transmission
 		disableRoaming bool
 	}
@@ -100,6 +101,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	// reset endpoint
 	peer.endpoint.Lock()
 	peer.endpoint.val = nil
+	peer.endpoint.configured = ""
 	peer.endpoint.disableRoaming = false
 	peer.endpoint.clearSrcOnTx = false
 	peer.endpoint.Unlock()
@@ -293,4 +295,25 @@ func (peer *Peer) markEndpointSrcForClearing() {
 		return
 	}
 	peer.endpoint.clearSrcOnTx = true
+}
+
+func (peer *Peer) reResolveConfiguredEndpoint() {
+	peer.endpoint.Lock()
+	configured := peer.endpoint.configured
+	peer.endpoint.Unlock()
+	if configured == "" {
+		return
+	}
+
+	endpoint, err := peer.device.net.bind.ParseEndpoint(configured)
+	if err != nil {
+		peer.device.log.Verbosef("%s - Failed to re-resolve endpoint %q: %v", peer, configured, err)
+		return
+	}
+
+	peer.endpoint.Lock()
+	peer.endpoint.val = endpoint
+	peer.endpoint.clearSrcOnTx = false
+	peer.endpoint.Unlock()
+	peer.device.log.Verbosef("%s - Re-resolved endpoint %q to %s", peer, configured, endpoint.DstToString())
 }
