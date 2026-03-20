@@ -90,7 +90,33 @@ var (
 func (*StdNetBind) ParseEndpoint(s string) (Endpoint, error) {
 	e, err := netip.ParseAddrPort(s)
 	if err != nil {
-		return nil, err
+		host, port, splitErr := net.SplitHostPort(s)
+		if splitErr != nil {
+			return nil, err
+		}
+		portNum, parseErr := strconv.ParseUint(port, 10, 16)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		ips, lookupErr := net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		var ip netip.Addr
+		for _, candidate := range ips {
+			addr := candidate.Unmap()
+			if addr.Is4() {
+				ip = addr
+				break
+			}
+			if !ip.IsValid() {
+				ip = addr
+			}
+		}
+		if !ip.IsValid() {
+			return nil, fmt.Errorf("no IPs found for endpoint %q", s)
+		}
+		e = netip.AddrPortFrom(ip, uint16(portNum))
 	}
 	return &StdNetEndpoint{
 		AddrPort: e,
